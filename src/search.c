@@ -134,24 +134,28 @@ kwsmusts (void)
 #endif /* !FGREP_PROGRAM */
 
 #ifdef MBS_SUPPORT
-/* This function allocate the array which correspond to "buf".
-   Then this check multibyte string and mark on the positions which
-   are not single byte character nor the first byte of a multibyte
-   character.  Caller must free the array.  */
-static char*
-check_multibyte_string(char *buf, size_t size)
+/* This function checks multibyte string and check on the positions
+   which are not single byte character nor the first byte of a
+   multibyte character.  */
+static const char*
+check_multibyte_string(const char *mbr, const char *end, const char *buflim)
 {
-  char *mb_properties = xcalloc(size, 1);
   mbstate_t cur_state;
-  wchar_t wc;
-  int i;
+  char eol = eolbyte;
+  const char *beg;
 
   memset(&cur_state, 0, sizeof(mbstate_t));
 
-  for (i = 0; i < size ;)
+  beg = end;
+  while (beg > mbr && beg[-1] != eolbyte)
+    beg--;
+  if (mbr < beg)
+    mbr = beg;
+
+  while (mbr < end)
     {
       size_t mbclen;
-      mbclen = mbrtowc(&wc, buf + i, size - i, &cur_state);
+      mbclen = mbrlen(mbr, buflim - mbr, &cur_state);
 
       if (mbclen == (size_t) -1 || mbclen == (size_t) -2 || mbclen == 0)
 	{
@@ -159,47 +163,41 @@ check_multibyte_string(char *buf, size_t size)
 	     We treat it as a single byte character.  */
 	  mbclen = 1;
 	}
-      else if (match_icase)
-	{
-	  if (iswupper((wint_t)wc))
-	    {
-	      wc = towlower((wint_t)wc);
-	      ignore_value (wcrtomb(buf + i, wc, &cur_state));
-	    }
-	}
-      mb_properties[i] = mbclen;
-      i += mbclen;
+      mbr += mbclen;
     }
 
-  return mb_properties;
+  return mbr;
 }
 
-static char*
-check_multibyte_string_no_icase(const char *buf, size_t size)
+/* This function is called to convert the strings "buf" points to lowercase
+   if MB_CUR_MAX is grater than 1 and match_icase is true.  */
+tolower_multibyte_string(char *mbr, const char *buflim)
 {
-  char *mb_properties = xcalloc(size, 1);
-  mbstate_t cur_state;
   wchar_t wc;
-  int i;
+  mbstate_t cur_state;
 
   memset(&cur_state, 0, sizeof(mbstate_t));
 
-  for (i = 0; i < size ;)
+  while (mbr < buflim)
     {
       size_t mbclen;
-      mbclen = mbrtowc(&wc, buf + i, size - i, &cur_state);
+      mbclen = mbrtowc(&wc, mbr, buflim - mbr, &cur_state);
 
       if (mbclen == (size_t) -1 || mbclen == (size_t) -2 || mbclen == 0)
-	{
-	  /* An invalid sequence, or a truncated multibyte character.
-	     We treat it as a single byte character.  */
-	  mbclen = 1;
-	}
-      mb_properties[i] = mbclen;
-      i += mbclen;
+        {
+          /* An invalid sequence, or a truncated multibyte character.
+             We treat it as a single byte character.  */
+          mbclen = 1;
+        }
+      else if (iswupper((wint_t)wc))
+        {
+          wc = towlower((wint_t)wc);
+          wcrtomb(mbr, wc, &cur_state);
+        }
+      mbr += mbclen;
     }
 
-  return mb_properties;
+  return;
 }
 #endif /* MBS_SUPPORT */
 
@@ -328,38 +326,39 @@ EXECUTE_FCT(EGexecute)
   struct kwsmatch kwsm;
   size_t i, ret_val;
 #ifdef MBS_SUPPORT
-  char *mb_properties = NULL;
-  if (MB_CUR_MAX > 1)
-    {
-      if (match_icase)
-        {
-          char *case_buf = xmalloc(size);
-          memcpy(case_buf, buf, size);
-	  if (start_ptr)
-	    start_ptr = case_buf + (start_ptr - buf);
-	  if (kwset)
-	    mb_properties = check_multibyte_string(case_buf, size);
-          buf = case_buf;
-        }
-      else
-	if (kwset)
-	  mb_properties = check_multibyte_string_no_icase(buf, size);
-    }
+  const char *mbr1, *mbr2;
+  mbr1 = mbr2 = buf;
 #endif /* MBS_SUPPORT */
-
   buflim = buf + size;
 
-  for (beg = end = buf; end < buflim; beg = end)
+  for (beg = end = buf; beg < buflim; beg = end)
     {
       if (!start_ptr)
 	{
 	  /* We don't care about an exact match.  */
 	  if (kwset)
 	    {
+#ifdef MBS_SUPPORT
+	      if (MB_CUR_MAX > 1 && match_icase)
+		{
+		  end = memchr(beg, eol, buflim - beg);
+		  end++;
+		  if (mbr1 <= beg)
+		    {
+		      mbr1 = beg;
+		      while (mbr1 > buf && mbr1[-1] != eol)
+			mbr1--;
+		      tolower_multibyte_string((char *)mbr1, end);
+		      mbr1 = end;
+		    }
+		}
+	      else
+#endif /* MBS_SUPPORT */
+		end = buflim;
 	      /* Find a possible match using the KWset matcher. */
-	      size_t offset = kwsexec (kwset, beg, buflim - beg, &kwsm);
+	      size_t offset = kwsexec (kwset, beg, end - beg, &kwsm);
 	      if (offset == (size_t) -1)
-		goto failure;
+		continue;
 	      beg += offset;
 	      /* Narrow down to the line containing the candidate, and
 		 run it through DFA. */
@@ -368,8 +367,12 @@ EXECUTE_FCT(EGexecute)
               else
                 end = buflim;
 #ifdef MBS_SUPPORT
-	      if (MB_CUR_MAX > 1 && mb_properties[beg - buf] == 0)
-		continue;
+	      if  (MB_CUR_MAX > 1)
+		{
+		  mbr2 = check_multibyte_string(mbr2, beg, buflim);
+		  if (mbr2 > beg)
+		    continue;
+		}
 #endif
 	      while (beg > buf && beg[-1] != eol)
 		--beg;
@@ -507,14 +510,6 @@ EXECUTE_FCT(EGexecute)
   *match_size = len;
   ret_val = beg - buf;
  out:
-#ifdef MBS_SUPPORT
-  if (MB_CUR_MAX > 1)
-    {
-      if (match_icase)
-        free ((char *) buf);
-      free (mb_properties);
-    }
-#endif /* MBS_SUPPORT */
   return ret_val;
 }
 #endif /* defined(GREP_PROGRAM) || defined(EGREP_PROGRAM) */
@@ -558,38 +553,44 @@ COMPILE_FCT(Fcompile)
 
 EXECUTE_FCT(Fexecute)
 {
-  register char const *beg, *try, *end;
+  register char const *buflim, *beg, *try, *end;
   register size_t len;
   char eol = eolbyte;
   struct kwsmatch kwsmatch;
   size_t ret_val;
 #ifdef MBS_SUPPORT
-  char *mb_properties = NULL;
-  if (MB_CUR_MAX > 1)
-    {
-      if (match_icase)
-        {
-          char *case_buf = xmemdup (buf, size);
-	  if (start_ptr)
-	    start_ptr = case_buf + (start_ptr - buf);
-	  mb_properties = check_multibyte_string(case_buf, size);
-          buf = case_buf;
-        }
-      else
-	mb_properties = check_multibyte_string_no_icase(buf, size);
-    }
+  const char *mbr1, *mbr2;
+  mbr1 = mbr2 = buf;
 #endif /* MBS_SUPPORT */
+  buflim = buf + size;
 
-  for (beg = start_ptr ? start_ptr : buf; beg <= buf + size; beg++)
+  for (beg = start_ptr ? start_ptr : buf; beg <= buflim; beg++)
     {
-      size_t offset = kwsexec (kwset, beg, buf + size - beg, &kwsmatch);
+#ifdef MBS_SUPPORT
+      if (MB_CUR_MAX > 1 && match_icase)
+	{
+	  if (mbr1 <= beg)
+	    {
+	      mbr1 = beg;
+	      while (mbr1 > buf && mbr1[-1] != eol)
+	        mbr1--;
+	      tolower_multibyte_string((char *)mbr1, buflim);
+	      mbr1 = buflim;
+	    }
+	}
+#endif /* MBS_SUPPORT */
+      size_t offset = kwsexec (kwset, beg, buflim - beg, &kwsmatch);
       if (offset == (size_t) -1)
 	goto failure;
-#ifdef MBS_SUPPORT
-      if (MB_CUR_MAX > 1 && mb_properties[offset+beg-buf] == 0)
-	continue; /* It is a part of multibyte character.  */
-#endif /* MBS_SUPPORT */
       beg += offset;
+#ifdef MBS_SUPPORT
+      if (MB_CUR_MAX > 1)
+	{
+	  mbr2 = check_multibyte_string(mbr2, beg, buflim);
+	  if (mbr2 > beg)
+	    continue; /* It is a part of multibyte character.  */
+	}
+#endif /* MBS_SUPPORT */
       len = kwsmatch.size[0];
       if (start_ptr && !match_words)
 	goto success_in_beg_and_len;
@@ -597,7 +598,7 @@ EXECUTE_FCT(Fexecute)
 	{
 	  if (beg > buf && beg[-1] != eol)
 	    continue;
-	  if (beg + len < buf + size && beg[len] != eol)
+	  if (beg + len < buflim && beg[len] != eol)
 	    continue;
 	  goto success;
 	}
@@ -606,7 +607,7 @@ EXECUTE_FCT(Fexecute)
 	  {
 	    if (try > buf && WCHAR((unsigned char) try[-1]))
 	      break;
-	    if (try + len < buf + size && WCHAR((unsigned char) try[len]))
+	    if (try + len < buflim && WCHAR((unsigned char) try[len]))
 	      {
 		offset = kwsexec (kwset, beg, --len, &kwsmatch);
 		if (offset == (size_t) -1)
@@ -628,7 +629,7 @@ EXECUTE_FCT(Fexecute)
   goto out;
 
  success:
-  if ((end = memchr (beg + len, eol, (buf + size) - (beg + len))) != NULL)
+  if ((end = memchr (beg + len, eol, buflim - (beg + len))) != NULL)
     end++;
   else
     end = buf + size;
@@ -639,14 +640,6 @@ EXECUTE_FCT(Fexecute)
   *match_size = len;
   ret_val = beg - buf;
  out:
-#ifdef MBS_SUPPORT
-  if (MB_CUR_MAX > 1)
-    {
-      if (match_icase)
-        free ((char *) buf);
-      free (mb_properties);
-    }
-#endif /* MBS_SUPPORT */
   return ret_val;
 }
 #endif /* defined(GREP_PROGRAM) || defined(FGREP_PROGRAM) */

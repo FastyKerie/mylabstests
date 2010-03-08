@@ -939,21 +939,48 @@ prline (char const *beg, char const *lim, int sep)
 static void
 prpending (char const *lim)
 {
+  char *buf;
+  const char *beg, *ibeg;
+
   if (!lastout)
     lastout = bufbeg;
-  while (pending > 0 && lastout < lim)
+
+  beg = lastout;
+
+#ifdef MBS_SUPPORT
+  if (MB_CUR_MAX > 1 && match_icase)
     {
-      char const *nl = memchr (lastout, eolbyte, lim - lastout);
+      char *buf;
+      ibeg = buf = (char *)xmalloc (lim - beg);
+      memcpy (buf, beg, lim - beg);
+    }
+  else
+#endif
+    {
+      buf = NULL;
+      ibeg = beg;
+    }
+
+  while (pending > 0 && beg < lim)
+    {
+      char const *nl = memchr (ibeg, eolbyte, lim - beg);
       size_t match_size;
       --pending;
       if (outleft
-	  || ((execute(lastout, nl + 1 - lastout,
+	  || ((execute(beg, nl + 1 - beg,
 		       &match_size, NULL) == (size_t) -1)
 	      == !out_invert))
-	prline (lastout, nl + 1, SEP_CHAR_REJECTED);
+{
+	  prline (lastout, nl + 1, SEP_CHAR_REJECTED);
+	  ibeg += lastout - beg;
+	  beg = lastout;
+	}
       else
 	pending = 0;
     }
+
+    if (buf)
+      free(buf);
 }
 
 /* Print the lines between BEG and LIM.  Deal with context crap.
@@ -1032,17 +1059,33 @@ static int
 grepbuf (char const *beg, char const *lim)
 {
   int nlines, n;
-  register char const *p;
+  char *buf;
+  register const char *p, *q;
   size_t match_offset;
   size_t match_size;
 
   nlines = 0;
   p = beg;
-  while ((match_offset = execute(p, lim - p, &match_size,
+
+#ifdef MBS_SUPPORT
+  if (MB_CUR_MAX > 1 && match_icase)
+    {
+      q = buf = (char *)xmalloc (lim - beg);
+      memcpy (buf, beg, lim - beg);
+    }
+  else
+#endif
+    {
+      buf = NULL;
+      q = beg;
+    }
+
+  while ((match_offset = execute(q, lim - p, &match_size,
 				 NULL)) != (size_t) -1)
     {
       char const *b = p + match_offset;
-      char const *endp = b + match_size;
+      char const *endp = p + match_offset + match_size;
+      char const *endq = q + match_offset + match_size;
       /* Avoid matching the empty line at the end of the buffer. */
       if (b == lim)
 	break;
@@ -1056,7 +1099,7 @@ grepbuf (char const *beg, char const *lim)
 	      if (exit_on_match)
 		exit (EXIT_SUCCESS);
 	      after_last_match = bufoffset - (buflim - endp);
-	      return nlines;
+	      goto done;
 	    }
 	}
       else if (p < b)
@@ -1065,7 +1108,7 @@ grepbuf (char const *beg, char const *lim)
 	  nlines += n;
           outleft -= n;
 	  if (!outleft)
-	    return nlines;
+	    goto done;
 	}
       p = endp;
     }
@@ -1075,6 +1118,8 @@ grepbuf (char const *beg, char const *lim)
       nlines += n;
       outleft -= n;
     }
+ done:
+  free (buf);
   return nlines;
 }
 
