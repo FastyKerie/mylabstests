@@ -1563,12 +1563,16 @@ atom (void)
 #if MBS_SUPPORT
   else if (tok == WCHAR)
     {
-      addtok_wc (case_fold ? towlower(wctok) : wctok);
+      wchar_t wc = case_fold ? towlower(wctok) : wctok;
+      if (wc != WEOF)
+	addtok_wc (wc);
 #ifndef GREP
-      if (case_fold && iswalpha(wctok))
+      wchar_t wc2 = case_fold && iswalpha(wctok) ? towupper(wctok) : WEOF;
+      if (wc2 != WEOF)
         {
-          addtok_wc (towupper(wctok));
-          addtok (OR);
+          addtok_wc (wc2);
+          if (wc != WEOF)
+            addtok (OR);
         }
 #endif
 
