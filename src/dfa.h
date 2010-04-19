@@ -283,6 +283,7 @@ struct dfa
 				   with dfaparse(). */
 #ifdef MBS_SUPPORT
   unsigned int mb_cur_max;	/* Cached value of MB_CUR_MAX.  */
+  int utf8_anychar_classes[5];	/* To lower ANYCHAR in UTF-8 locales.  */
 
   /* The following are used only if MB_CUR_MAX > 1.  */
 
