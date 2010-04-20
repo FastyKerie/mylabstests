@@ -2061,6 +2061,7 @@ main (int argc, char **argv)
 	label = optarg;
 	break;
 
+      case MMAP_OPTION:
       case 0:
 	/* long options */
 	break;
