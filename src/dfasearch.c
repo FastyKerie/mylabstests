@@ -125,6 +125,8 @@ GEAcompile (char const *pattern, size_t size, reg_syntax_t syntax_bits)
 
   if (match_icase)
     syntax_bits |= RE_ICASE;
+  if (getenv ("POSIXLY_CORRECT"))
+    syntax_bits |= RE_DOT_NOT_NULL;
   re_set_syntax (syntax_bits);
   dfasyntax (syntax_bits, match_icase, eolbyte);
 

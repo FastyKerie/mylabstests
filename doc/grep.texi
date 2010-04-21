@@ -1083,7 +1083,9 @@ repetition operators:
 @opindex .
 @cindex dot
 @cindex period
-The period @samp{.} matches any single character.
+The period @samp{.} matches any single character.  If the environment
+variable @env{POSIXLY_CORRECT} is set, it will not match an @sc{ascii}
+@code{NUL} character (that is, a zero byte).
 
 @item ?
 @opindex ?

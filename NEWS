@@ -4,6 +4,10 @@ GNU grep NEWS                                    -*- outline -*-
 
 ** Bug fixes
 
+  If the environment variable `POSIXLY_CORRECT' is set, a period in
+  a regular expression will not match a NUL character, as required
+  by the POSIX standard. ["bug" present since "the beginning"]
+
   Searching with grep -Fw for an empty string would not match an
   empty line. [bug present since "the beginning"]
 
