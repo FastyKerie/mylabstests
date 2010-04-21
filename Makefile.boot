@@ -22,52 +22,69 @@ OBJEXT = o
 # Source of grep.
 grep_OBJS = \
       grep.$(OBJEXT) \
-      search.$(OBJEXT) \
+      dfasearch.$(OBJEXT) \
+      kwsearch.$(OBJEXT) \
+      pcresearch.$(OBJEXT) \
+      main.$(OBJEXT) \
       kwset.$(OBJEXT) \
-      dfa.$(OBJEXT)
+      dfa.$(OBJEXT) \
+      searchutils.$(OBJEXT) \
+      $(LIB_OBJS)
 egrep_OBJS = \
       egrep.$(OBJEXT) \
-      esearch.$(OBJEXT) \
+      dfasearch.$(OBJEXT) \
+      kwsearch.$(OBJEXT) \
+      pcresearch.$(OBJEXT) \
+      main.$(OBJEXT) \
       kwset.$(OBJEXT) \
-      dfa.$(OBJEXT)
+      dfa.$(OBJEXT) \
+      searchutils.$(OBJEXT) \
+      $(LIB_OBJS)
 fgrep_OBJS = \
       fgrep.$(OBJEXT) \
-      fsearch.$(OBJEXT) \
-      kwset.$(OBJEXT)
+      kwsearch.$(OBJEXT) \
+      main.$(OBJEXT) \
+      kwset.$(OBJEXT) \
+      searchutils.$(OBJEXT) \
+      $(LIB_OBJS)
 
 # Supporting routines.
 LIB_OBJS_core =  \
-      $(libdir)/closeout.$(OBJEXT) \
-      $(libdir)/error.$(OBJEXT) \
-      $(libdir)/exclude.$(OBJEXT) \
-      $(libdir)/hard-locale.$(OBJEXT) \
-      $(libdir)/isdir.$(OBJEXT) \
-      $(libdir)/quotearg.$(OBJEXT) \
-      $(libdir)/regex.$(OBJEXT) \
-      $(libdir)/savedir.$(OBJEXT) \
-      $(libdir)/strtoumax.$(OBJEXT) \
-      $(libdir)/xmalloc.$(OBJEXT) \
-      $(libdir)/xstrtol.$(OBJEXT) \
-      $(libdir)/xstrtoumax.$(OBJEXT)
+      ../lib/argmatch.$(OBJEXT) \
+      ../lib/c-ctype.$(OBJEXT) \
+      close-stream.$(OBJEXT) \
+      ../lib/closeout.$(OBJEXT) \
+      ../lib/error.$(OBJEXT) \
+      ../lib/exclude.$(OBJEXT) \
+      ../lib/exitfail.$(OBJEXT) \
+      ../lib/hard-locale.$(OBJEXT) \
+      ../lib/hash.$(OBJEXT) \
+      ../lib/isdir.$(OBJEXT) \
+      ../lib/mbchar.$(OBJEXT) \
+      ../lib/mbscasecmp.$(OBJEXT) \
+      ../lib/progname.$(OBJEXT) \
+      ../lib/quotearg.$(OBJEXT) \
+      ../lib/quote.$(OBJEXT) \
+      ../lib/regex.$(OBJEXT) \
+      ../lib/savedir.$(OBJEXT) \
+      ../lib/strnlen1.$(OBJEXT) \
+      ../lib/xalloc-die.$(OBJEXT) \
+      ../lib/xmalloc.$(OBJEXT) \
+      ../lib/xstrtol.$(OBJEXT) \
+      ../lib/xstrtoul.$(OBJEXT)
 
 # Comment out functions already supported as needed.
-#LIB_OBJ_atexit   =  $(libdir)/atexit.$(OBJEXT)
-#LIB_OBJ_alloca   =  $(libdir)/alloca.$(OBJEXT)
-#LIB_OBJ_fnmatch  =  $(libdir)/fnmatch.$(OBJEXT)
-LIB_OBJ_getopt   =  $(libdir)/getopt.$(OBJEXT) $(libdir)/getopt1.$(OBJEXT)
-#LIB_OBJ_memchr   =  $(libdir)/memchr.$(OBJEXT)
-LIB_OBJ_obstack  =  $(libdir)/obstack.$(OBJEXT)
-#LIB_OBJ_strtoul  =  $(libdir)/strtoul.$(OBJEXT)
+#LIB_OBJ_atexit   =  ../lib/atexit.$(OBJEXT)
+#LIB_OBJ_alloca   =  ../lib/alloca.$(OBJEXT)
+#LIB_OBJ_fnmatch  =  ../lib/fnmatch.$(OBJEXT)
+LIB_OBJ_getopt   =  ../lib/getopt.$(OBJEXT) ../lib/getopt1.$(OBJEXT)
+#LIB_OBJ_memchr   =  ../lib/memchr.$(OBJEXT)
+LIB_OBJ_obstack  =  ../lib/obstack.$(OBJEXT)
+#LIB_OBJ_strtoul  =  ../lib/strtoul.$(OBJEXT)
 
 LIB_OBJS = $(LIB_OBJS_core) $(LIB_OBJ_atexit) $(LIB_OBJ_alloca) \
            $(LIB_OBJ_fnmatch) $(LIB_OBJ_getopt) $(LIB_OBJ_memchr) \
            $(LIB_OBJ_obstack) $(LIB_OBJ_strtoul)
-
-# For Linux
-#LIB_OBJS = $(LIB_OBJS_core)
-
-# For QNX/Neutrino
-#LIB_OBJS = $(LIB_OBJS_core) $(LIB_OBJ_getopt) $(LIB_OBJ_obstack)
 
 # Where is DIR and opendir/readdir defined.
 #  or -DHAVE_DIRENT_H
@@ -75,84 +92,77 @@ LIB_OBJS = $(LIB_OBJS_core) $(LIB_OBJ_atexit) $(LIB_OBJ_alloca) \
 #  or -DHAVE_SYS_DIR_H
 #  or -DHAVE_NDIR_H
 #
-# undef HAVE_STRERROR if lacking strerror()
-# undef HAVE_MEMCHR if lacking memchr()
-#
 
-# default dry run
+# default flags
 DEFS_core = \
-           -DSTDC_HEADERS  \
-           -DHAVE_MEMCHR \
            -DHAVE_DIRENT_H \
-           -DHAVE_STRERROR \
            -Dconst= \
-           -Duintmax_t=long
-
-# SunOS-4.1.x k&r cc
-#DEFS_sunos =  -DSTDC_HEADERS -DHAVE_MEMCHR -DHAVE_DIRENT_H -Dconst=
+           -D__restrict= -D__restrict__= \
+           -Dintmax_t='long' -Dxstrtoumax=xstrtoul
 
 # Solaris
-#DEFS_solaris = -DSTDC_HEADERS -DHAVE_MEMCHR -DHAVE_DIRENT_H -DHAVE_STRERROR
+#DEFS_solaris = -DSTDC_HEADERS -DHAVE_DIRENT_H -DHAVE_STRERROR
 
 # DOS/WIN (change also OBJEXT/EXEEXT, see above)
 # DOS/DJGPP
-DEFS_dos = -DSTDC_HEADERS -DHAVE_MEMCHR -DHAVE_STRERROR -DHAVE_DIRENT_H \
-           -DHAVE_DOS_FILE_CONTENTS \
-           -DHAVE_DOS_FILE_NAMES -DHAVE_UNISTD_H -DHAVE_SETMODE
-
-# If support ANSI C prototypes
-DEFS_ansi_c = -DPROTOTYPES
+#DEFS_dos = -DSTDC_HEADERS -DHAVE_DIRENT_H \
+#           -DHAVE_DOS_FILE_CONTENTS -DHAVE_DOS_FILE_NAMES -DHAVE_UNISTD_H
 
 # No wchar support
-# DEFS_wchar = -DUSE_WIDE_CHAR -DHAVE_WCHAR_H
 # DEFS_wchar =  -Dwchar_t=int -Dmbstate_t=int
-DEFS_wchar =  -DHAVE_WCHAR_H
+# DEFS_wchar =  -DHAVE_WCHAR_H
 
 # Is strtol() and strtoul()  declarared ?
 #DEFS_strtol = -DHAVE_DECL_STRTOULL=0 -DHAVE_DECL_STRTOUL=0
 DEFS_strtol = -DHAVE_DECL_STRTOULL=1 -DHAVE_DECL_STRTOUL=1
 
-# Define if malloc(0)/realloc(0) works
-#DEFS_alloc = -DHAVE_DONE_WORKING_MALLOC_CHECK=0 \
-#             -DHAVE_DONE_WORKING_REALLOC_CHECK=0
-DEFS_alloc = -DHAVE_DONE_WORKING_MALLOC_CHECK=1 \
-             -DHAVE_DONE_WORKING_REALLOC_CHECK=1
-
-DEFS = $(DEFS_core) $(DEFS_ansi_c) $(DEFS_wchar) $(DEFS_strtol) $(DEFS_alloc) \
-       -DHAVE_DECL_STRERROR_R=1 -DHAVE_VPRINTF -DCHAR_BIT=8 \
-       -DSTDOUT_FILENO=1
+DEFS = $(DEFS_core) $(DEFS_wchar) $(DEFS_strtol) \
+       -DCHAR_BIT=8 -DSTDOUT_FILENO=1 -D_GNU_SOURCE \
+       -D_REGEX_LARGE_OFFSETS \
+       -D_GL_UNUSED= -D_UNUSED_PARAMETER_= \
 
 
 ####
 
-CFLAGS = $(DEFS) -I. -I.. -I$(libdir) \
+CFLAGS = $(DEFS) -I. -I../lib -I../build-aux \
 	 -DVERSION=\"bootstrap\" -DPACKAGE=\"grep\" \
 	 -DPACKAGE_STRING=\"grep\ bootstrap\" \
-	 -DPACKAGE_BUGREPORT=\"bug-grep@gnu.org\"
-
-libdir = ../lib
+	 -DPACKAGE_BUGREPORT=\"bug-grep@gnu.org\" \
 
 PROGS = grep$(EXEEXT) egrep$(EXEEXT) fgrep$(EXEEXT)
 
-libgreputils_a = $(libdir)/libgreputils.a
+CLEANFILES = configmake.h config.h getopt.h fpending.h close-stream.c
 
-all : $(libgreputils_a) $(PROGS)
+all : $(PROGS)
 
-grep$(EXEEXT)  :  $(grep_OBJS)          $(libgreputils_a)
-	$(CC)     $(grep_OBJS) -o  grep $(libgreputils_a)
+configmake.h:
+	:> configmake.h
 
-egrep$(EXEEXT) : $(egrep_OBJS)          $(libgreputils_a)
-	$(CC)    $(egrep_OBJS) -o egrep $(libgreputils_a)
+config.h:
+	:> config.h
 
-fgrep$(EXEEXT) : $(fgrep_OBJS)          $(libgreputils_a)
-	$(CC)    $(fgrep_OBJS) -o fgrep $(libgreputils_a)
+getopt.h: ../lib/getopt.in.h
+	sed '/# *if/ s/@[^@]*@/0/g; /@[^@]*@/d' ../lib/getopt.in.h > getopt.h
 
-$(libgreputils_a) : $(LIB_OBJS)
-	$(AR) $(ARFLAGS) $(libgreputils_a) $(LIB_OBJS)
+fpending.h:
+	echo '#define __fpending(f) 0' > fpending.h
+
+close-stream.c: ../lib/close-stream.c
+	cp ../lib/close-stream.c close-stream.c
+
+$(grep_OBJS): config.h \
+	configmake.h \
+	getopt.h \
+	fpending.h
+
+grep$(EXEEXT)  :  $(grep_OBJS)
+	$(CC)     $(grep_OBJS) -o  grep
+
+egrep$(EXEEXT) : $(egrep_OBJS)
+	$(CC)    $(egrep_OBJS) -o egrep
+
+fgrep$(EXEEXT) : $(fgrep_OBJS)
+	$(CC)    $(fgrep_OBJS) -o fgrep
 
 clean :
-	$(RM)   grep.$(OBJEXT)   egrep.$(OBJEXT)   fgrep.$(OBJEXT)
-	$(RM) search.$(OBJEXT) esearch.$(OBJEXT) fsearch.$(OBJEXT)
-	$(RM) kwset.$(OBJEXT) dfa.$(OBJEXT)
-	$(RM) $(PROGS)
-	$(RM) $(libgreputils_a) $(LIB_OBJS)
+	rm -f $(grep_OBJS) $(egrep_OBJS) $(fgrep_OBJS) $(PROGS) $(CLEANFILES)
