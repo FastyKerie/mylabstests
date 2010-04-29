@@ -2927,6 +2927,15 @@ dfaexec (struct dfa *d, char const *begin, char *end,
 		continue;
 	      }
 
+	    if (backref)
+              {
+                *backref = 1;
+                free(mblen_buf);
+                free(inputwcs);
+                *end = saved_end;
+                return (char *) p;
+              }
+
 	    /* Can match with a multibyte character (and multi character
 	       collating element).  Transition table might be updated.  */
 	    s = transit_state(d, s, &p);
