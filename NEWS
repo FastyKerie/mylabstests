@@ -36,6 +36,9 @@ GNU grep NEWS                                    -*- outline -*-
   [[:digit:]].  This new behavior is disabled when the POSIXLY_CORRECT
   environment variable is set.
 
+  On systems using glibc, grep can support equivalence classes.  To
+  ensure this is the case, however, you should configure grep with the
+  command-line option --without-included-regex.
 
 * Noteworthy changes in release 2.6.3 (2010-04-02) [stable]
 
