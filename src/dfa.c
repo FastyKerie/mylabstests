@@ -274,15 +274,20 @@ struct mb_char_classes
   int invert;
   wchar_t *chars;		/* Normal characters.  */
   int nchars;
+  int achars;
   wctype_t *ch_classes;		/* Character classes.  */
   int nch_classes;
+  int ach_classes;
   wchar_t *range_sts;		/* Range characters (start of the range).  */
   wchar_t *range_ends;		/* Range characters (end of the range).  */
   int nranges;
+  int aranges;
   char **equivs;		/* Equivalent classes.  */
   int nequivs;
+  int aequivs;
   char **coll_elems;
   int ncoll_elems;		/* Collating elements.  */
+  int acoll_elems;
 };
 #endif
 
@@ -406,7 +411,7 @@ static void regexp (void);
   if ((index) >= (nalloc))			  \
     {						  \
       do					  \
-        (nalloc) *= 2;				  \
+        (nalloc) = (nalloc) * 2 + 1;		  \
       while ((index) >= (nalloc));		  \
       REALLOC(p, t, nalloc);			  \
     }
@@ -757,12 +762,7 @@ parse_bracket_exp (void)
 
   /* Work area to build a mb_char_classes.  */
   struct mb_char_classes *work_mbc;
-  int chars_al, range_sts_al, range_ends_al, ch_classes_al,
-    equivs_al, coll_elems_al;
 
-  chars_al = 1;
-  range_sts_al = range_ends_al = 0;
-  ch_classes_al = equivs_al = coll_elems_al = 0;
   if (MB_CUR_MAX > 1)
     {
       REALLOC_IF_NECESSARY(dfa->mbcsets, struct mb_char_classes,
@@ -846,10 +846,8 @@ parse_bracket_exp (void)
                       /* Store the character class as wctype_t.  */
                       wctype_t wt = wctype (class);
 
-                      if (ch_classes_al == 0)
-                        MALLOC(work_mbc->ch_classes, wctype_t, ++ch_classes_al);
                       REALLOC_IF_NECESSARY(work_mbc->ch_classes, wctype_t,
-                                           ch_classes_al,
+                                           work_mbc->ach_classes,
                                            work_mbc->nch_classes + 1);
                       work_mbc->ch_classes[work_mbc->nch_classes++] = wt;
                     }
@@ -870,10 +868,8 @@ parse_bracket_exp (void)
                   if (c1 == '=')
                     /* build equivalent class.  */
                     {
-                      if (equivs_al == 0)
-                        MALLOC(work_mbc->equivs, char*, ++equivs_al);
                       REALLOC_IF_NECESSARY(work_mbc->equivs, char*,
-                                           equivs_al,
+                                           work_mbc->aequivs,
                                            work_mbc->nequivs + 1);
                       work_mbc->equivs[work_mbc->nequivs++] = elem;
                     }
@@ -881,10 +877,8 @@ parse_bracket_exp (void)
                   if (c1 == '.')
                     /* build collating element.  */
                     {
-                      if (coll_elems_al == 0)
-                        MALLOC(work_mbc->coll_elems, char*, ++coll_elems_al);
                       REALLOC_IF_NECESSARY(work_mbc->coll_elems, char*,
-                                           coll_elems_al,
+                                           work_mbc->acoll_elems,
                                            work_mbc->ncoll_elems + 1);
                       work_mbc->coll_elems[work_mbc->ncoll_elems++] = elem;
                     }
@@ -930,15 +924,13 @@ parse_bracket_exp (void)
             {
               /* When case folding map a range, say [m-z] (or even [M-z])
                  to the pair of ranges, [m-z] [M-Z].  */
-              if (range_sts_al == 0)
-                {
-                  MALLOC(work_mbc->range_sts, wchar_t, ++range_sts_al);
-                  MALLOC(work_mbc->range_ends, wchar_t, ++range_ends_al);
-                }
+	      int range_sts_al = work_mbc->aranges;
               REALLOC_IF_NECESSARY(work_mbc->range_sts, wchar_t,
                                    range_sts_al, work_mbc->nranges + 1);
               REALLOC_IF_NECESSARY(work_mbc->range_ends, wchar_t,
-                                   range_ends_al, work_mbc->nranges + 1);
+                                   work_mbc->aranges, work_mbc->nranges + 1);
+	      assert(range_sts_al == work_mbc->aranges);
+
               work_mbc->range_sts[work_mbc->nranges] =
                 case_fold ? towlower(wc) : (wchar_t)wc;
               work_mbc->range_ends[work_mbc->nranges++] =
@@ -947,11 +939,13 @@ parse_bracket_exp (void)
 #ifndef GREP
               if (case_fold && (iswalpha(wc) || iswalpha(wc2)))
                 {
-                  REALLOC_IF_NECESSARY(work_mbc->range_sts, wchar_t,
-                                       range_sts_al, work_mbc->nranges + 1);
+		  REALLOC_IF_NECESSARY(work_mbc->range_sts, wchar_t,
+		      		       range_sts_al, work_mbc->nranges + 1);
+		  REALLOC_IF_NECESSARY(work_mbc->range_ends, wchar_t,
+		      		       work_mbc->aranges, work_mbc->nranges + 1);
+		  assert(range_sts_al == work_mbc->aranges);
+
                   work_mbc->range_sts[work_mbc->nranges] = towupper(wc);
-                  REALLOC_IF_NECESSARY(work_mbc->range_ends, wchar_t,
-                                       range_ends_al, work_mbc->nranges + 1);
                   work_mbc->range_ends[work_mbc->nranges++] = towupper(wc2);
                 }
 #endif
@@ -990,8 +984,8 @@ parse_bracket_exp (void)
               c = wctob(wc);
               if (c == EOF || (wint_t)c != (wint_t)wc)
                 {
-                  REALLOC_IF_NECESSARY(work_mbc->chars, wchar_t, chars_al,
-                                       work_mbc->nchars + 1);
+                  REALLOC_IF_NECESSARY(work_mbc->chars, wchar_t,
+				       work_mbc->achars, work_mbc->nchars + 1);
                   work_mbc->chars[work_mbc->nchars++] = wc;
                 }
 #ifdef GREP
@@ -1003,8 +997,8 @@ parse_bracket_exp (void)
             }
           if (c == EOF || (wint_t)c != (wint_t)wc)
             {
-              REALLOC_IF_NECESSARY(work_mbc->chars, wchar_t, chars_al,
-                                   work_mbc->nchars + 1);
+              REALLOC_IF_NECESSARY(work_mbc->chars, wchar_t,
+                                   work_mbc->achars, work_mbc->nchars + 1);
               work_mbc->chars[work_mbc->nchars++] = wc;
             }
         }
