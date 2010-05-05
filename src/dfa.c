@@ -1095,6 +1095,7 @@ lex (void)
   unsigned int c, c2;
   int backslash = 0;
   charclass ccl;
+  struct mb_char_classes *work_mbc;
   int i;
 
   /* Basic plan: We fetch a character.  If it's a backslash,
@@ -1359,28 +1360,25 @@ lex (void)
         case 'S':
           if (!backslash || (syntax_bits & RE_NO_GNU_OPS))
             goto normal_char;
-          zeroset(ccl);
-          for (c2 = 0; c2 < NOTCHAR; ++c2)
-            if (isspace(c2))
-              setbit(c2, ccl);
-          if (c == 'S')
-            notset(ccl);
+          work_mbc = mbcset_alloc(dfa, ccl);
+          mbcset_add_class(work_mbc, "space");
           laststart = 0;
-          return lasttok = CSET + charclass_index(ccl);
+          return mbcset_finish(work_mbc, c == 'S');
 #endif
 
         case 'w':
         case 'W':
           if (!backslash || (syntax_bits & RE_NO_GNU_OPS))
             goto normal_char;
-          zeroset(ccl);
-          for (c2 = 0; c2 < NOTCHAR; ++c2)
-            if (IS_WORD_CONSTITUENT(c2))
-              setbit(c2, ccl);
-          if (c == 'W')
-            notset(ccl);
+          work_mbc = mbcset_alloc(dfa, ccl);
+#if MBS_SUPPORT
+          mbcset_add_char(work_mbc, L'_');
+#else
+          setbit('_', ccl);
+#endif
+          mbcset_add_class(work_mbc, "alnum");
           laststart = 0;
-          return lasttok = CSET + charclass_index(ccl);
+          return mbcset_finish(work_mbc, c == 'W');
 
         case '[':
           if (backslash)
