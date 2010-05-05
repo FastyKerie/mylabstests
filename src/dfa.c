@@ -747,6 +747,153 @@ find_pred (const char *str)
   return &prednames[i];
 }
 
+static void
+mbcset_add_class (struct mb_char_classes *work_mbc, charclass ccl,
+		  const char *str)
+{
+  unsigned c2;
+  char const *class
+    = (case_fold && (STREQ  (str, "upper")
+		     || STREQ  (str, "lower"))
+       ? "alpha"
+       : str);
+  const struct dfa_ctype *pred = find_pred (class);
+  if (!pred)
+    dfaerror(_("invalid character class"));
+
+#if MBS_SUPPORT
+  if (MB_CUR_MAX > 1 && !pred->single_byte_only)
+  {
+    /* Store the character class as wctype_t.  */
+    wctype_t wt = wctype (class);
+
+    REALLOC_IF_NECESSARY(work_mbc->ch_classes, wctype_t,
+			 work_mbc->ach_classes,
+       			 work_mbc->nch_classes + 1);
+    work_mbc->ch_classes[work_mbc->nch_classes++] = wt;
+  }
+#endif
+
+  for (c2 = 0; c2 < NOTCHAR; ++c2)
+    if (pred->func(c2))
+      setbit_case_fold (c2, ccl);
+}
+
+
+static void
+mbcset_add_range (struct mb_char_classes *work_mbc, charclass ccl,
+#if MBS_SUPPORT
+                  wint_t wc, wint_t wc2,
+#endif
+                  unsigned int c, unsigned int c2)
+{
+#if MBS_SUPPORT
+  if (MB_CUR_MAX > 1)
+    {
+      /* When case folding map a range, say [m-z] (or even [M-z])
+         to the pair of ranges, [m-z] [M-Z].  */
+      int range_sts_al = work_mbc->aranges;
+      REALLOC_IF_NECESSARY(work_mbc->range_sts, wchar_t,
+                           range_sts_al, work_mbc->nranges + 1);
+      REALLOC_IF_NECESSARY(work_mbc->range_ends, wchar_t,
+                           work_mbc->aranges, work_mbc->nranges + 1);
+      assert(range_sts_al == work_mbc->aranges);
+
+      work_mbc->range_sts[work_mbc->nranges] =
+        case_fold ? towlower(wc) : (wchar_t)wc;
+      work_mbc->range_ends[work_mbc->nranges++] =
+        case_fold ? towlower(wc2) : (wchar_t)wc2;
+
+#ifndef GREP
+      if (case_fold && (iswalpha(wc) || iswalpha(wc2)))
+        {
+          REALLOC_IF_NECESSARY(work_mbc->range_sts, wchar_t,
+                               range_sts_al, work_mbc->nranges + 1);
+          REALLOC_IF_NECESSARY(work_mbc->range_ends, wchar_t,
+                               work_mbc->aranges, work_mbc->nranges + 1);
+          assert(range_sts_al == work_mbc->aranges);
+
+          work_mbc->range_sts[work_mbc->nranges] = towupper(wc);
+          work_mbc->range_ends[work_mbc->nranges++] = towupper(wc2);
+        }
+#endif
+    }
+  else
+#endif
+    {
+      unsigned c1 = c;
+      if (case_fold)
+        {
+          c1 = tolower (c1);
+          c2 = tolower (c2);
+        }
+      if (!hard_LC_COLLATE)
+        for (c = c1; c <= c2; c++)
+          setbit_case_fold (c, ccl);
+      else
+        for (c = 0; c < NOTCHAR; ++c)
+          if (!(case_fold && isupper (c))
+              && in_coll_range (c, c1, c2))
+            setbit_case_fold (c, ccl);
+    }
+}
+
+#if MBS_SUPPORT
+static void
+mbcset_add_equiv (struct mb_char_classes *work_mbc, char *elem)
+{
+  REALLOC_IF_NECESSARY(work_mbc->equivs, char*,
+		       work_mbc->aequivs,
+   		       work_mbc->nequivs + 1);
+  work_mbc->equivs[work_mbc->nequivs++] = elem;
+}
+
+static void
+mbcset_add_elem (struct mb_char_classes *work_mbc, char *elem)
+{
+  REALLOC_IF_NECESSARY(work_mbc->coll_elems, char*,
+		       work_mbc->acoll_elems,
+   		       work_mbc->ncoll_elems + 1);
+  work_mbc->coll_elems[work_mbc->ncoll_elems++] = elem;
+}
+
+static void
+mbcset_add_char (struct mb_char_classes *work_mbc, charclass ccl, wint_t wc)
+{
+  unsigned c;
+
+  /* Build normal characters.  */
+  setbit_case_fold (wc, ccl);
+  if (MB_CUR_MAX > 1)
+    {
+      if (case_fold && iswalpha(wc))
+        {
+          wc = towlower(wc);
+          c = wctob(wc);
+          if (c == EOF || (wint_t)c != (wint_t)wc)
+            {
+              REALLOC_IF_NECESSARY(work_mbc->chars, wchar_t,
+                                   work_mbc->achars, work_mbc->nchars + 1);
+              work_mbc->chars[work_mbc->nchars++] = wc;
+            }
+#ifdef GREP
+          return;
+#else
+          wc = towupper(wc);
+          c = wctob(wc);
+#endif
+        }
+      if (c == EOF || (wint_t)c != (wint_t)wc)
+        {
+          REALLOC_IF_NECESSARY(work_mbc->chars, wchar_t,
+                               work_mbc->achars, work_mbc->nchars + 1);
+          work_mbc->chars[work_mbc->nchars++] = wc;
+        }
+    }
+}
+#endif
+
+
 /* Multibyte character handling sub-routine for lex.
    This function  parse a bracket expression and build a struct
    mb_char_classes.  */
@@ -829,34 +976,7 @@ parse_bracket_exp (void)
               /* Fetch bracket.  */
               FETCH_WC (c, wc, _("unbalanced ["));
               if (c1 == ':')
-                /* build character class.  */
-                {
-                  char const *class
-                    = (case_fold && (STREQ  (str, "upper")
-                                     || STREQ  (str, "lower"))
-                                       ? "alpha"
-                                       : str);
-                  const struct dfa_ctype *pred = find_pred (class);
-                  if (!pred)
-                    dfaerror(_("invalid character class"));
-
-#if MBS_SUPPORT
-                  if (MB_CUR_MAX > 1 && !pred->single_byte_only)
-                    {
-                      /* Store the character class as wctype_t.  */
-                      wctype_t wt = wctype (class);
-
-                      REALLOC_IF_NECESSARY(work_mbc->ch_classes, wctype_t,
-                                           work_mbc->ach_classes,
-                                           work_mbc->nch_classes + 1);
-                      work_mbc->ch_classes[work_mbc->nch_classes++] = wt;
-                    }
-#endif
-
-                  for (c2 = 0; c2 < NOTCHAR; ++c2)
-                    if (pred->func(c2))
-                      setbit_case_fold (c2, ccl);
-                }
+		mbcset_add_class (work_mbc, ccl, str);
 
 #if MBS_SUPPORT
               else if (c1 == '=' || c1 == '.')
@@ -866,22 +986,9 @@ parse_bracket_exp (void)
                   strncpy(elem, str, len + 1);
 
                   if (c1 == '=')
-                    /* build equivalent class.  */
-                    {
-                      REALLOC_IF_NECESSARY(work_mbc->equivs, char*,
-                                           work_mbc->aequivs,
-                                           work_mbc->nequivs + 1);
-                      work_mbc->equivs[work_mbc->nequivs++] = elem;
-                    }
-
-                  if (c1 == '.')
-                    /* build collating element.  */
-                    {
-                      REALLOC_IF_NECESSARY(work_mbc->coll_elems, char*,
-                                           work_mbc->acoll_elems,
-                                           work_mbc->ncoll_elems + 1);
-                      work_mbc->coll_elems[work_mbc->ncoll_elems++] = elem;
-                    }
+		    mbcset_add_equiv (work_mbc, elem);
+		  else
+		    mbcset_add_elem (work_mbc, elem);
                 }
 #endif
 
@@ -919,89 +1026,18 @@ parse_bracket_exp (void)
               && (syntax_bits & RE_BACKSLASH_ESCAPE_IN_LISTS))
             FETCH_WC(c2, wc2, _("unbalanced ["));
 
+	  mbcset_add_range (work_mbc, ccl,
 #if MBS_SUPPORT
-          if (MB_CUR_MAX > 1)
-            {
-              /* When case folding map a range, say [m-z] (or even [M-z])
-                 to the pair of ranges, [m-z] [M-Z].  */
-	      int range_sts_al = work_mbc->aranges;
-              REALLOC_IF_NECESSARY(work_mbc->range_sts, wchar_t,
-                                   range_sts_al, work_mbc->nranges + 1);
-              REALLOC_IF_NECESSARY(work_mbc->range_ends, wchar_t,
-                                   work_mbc->aranges, work_mbc->nranges + 1);
-	      assert(range_sts_al == work_mbc->aranges);
-
-              work_mbc->range_sts[work_mbc->nranges] =
-                case_fold ? towlower(wc) : (wchar_t)wc;
-              work_mbc->range_ends[work_mbc->nranges++] =
-                case_fold ? towlower(wc2) : (wchar_t)wc2;
-
-#ifndef GREP
-              if (case_fold && (iswalpha(wc) || iswalpha(wc2)))
-                {
-		  REALLOC_IF_NECESSARY(work_mbc->range_sts, wchar_t,
-		      		       range_sts_al, work_mbc->nranges + 1);
-		  REALLOC_IF_NECESSARY(work_mbc->range_ends, wchar_t,
-		      		       work_mbc->aranges, work_mbc->nranges + 1);
-		  assert(range_sts_al == work_mbc->aranges);
-
-                  work_mbc->range_sts[work_mbc->nranges] = towupper(wc);
-                  work_mbc->range_ends[work_mbc->nranges++] = towupper(wc2);
-                }
+                            wc, wc2,
 #endif
-            }
-          else
-#endif
-            {
-              c1 = c;
-              if (case_fold)
-                {
-                  c1 = tolower (c1);
-                  c2 = tolower (c2);
-                }
-              if (!hard_LC_COLLATE)
-                for (c = c1; c <= c2; c++)
-                  setbit_case_fold (c, ccl);
-              else
-                for (c = 0; c < NOTCHAR; ++c)
-                  if (!(case_fold && isupper (c))
-                      && in_coll_range (c, c1, c2))
-                    setbit_case_fold (c, ccl);
-            }
+                            c, c2);
 
           FETCH_WC(c1, wc1, _("unbalanced ["));
           continue;
         }
 
 #if MBS_SUPPORT
-      /* Build normal characters.  */
-      setbit_case_fold (wc, ccl);
-      if (MB_CUR_MAX > 1)
-        {
-          if (case_fold && iswalpha(wc))
-            {
-              wc = towlower(wc);
-              c = wctob(wc);
-              if (c == EOF || (wint_t)c != (wint_t)wc)
-                {
-                  REALLOC_IF_NECESSARY(work_mbc->chars, wchar_t,
-				       work_mbc->achars, work_mbc->nchars + 1);
-                  work_mbc->chars[work_mbc->nchars++] = wc;
-                }
-#ifdef GREP
-              continue;
-#else
-              wc = towupper(wc);
-              c = wctob(wc);
-#endif
-            }
-          if (c == EOF || (wint_t)c != (wint_t)wc)
-            {
-              REALLOC_IF_NECESSARY(work_mbc->chars, wchar_t,
-                                   work_mbc->achars, work_mbc->nchars + 1);
-              work_mbc->chars[work_mbc->nchars++] = wc;
-            }
-        }
+      mbcset_add_char (work_mbc, ccl, wc);
 #else
       setbit_case_fold (c, ccl);
 #endif
