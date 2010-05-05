@@ -85,7 +85,7 @@
 #define CHARCLASS_INTS ((NOTCHAR + INTBITS - 1) / INTBITS)
 
 /* Sets of unsigned characters are stored as bit vectors in arrays of ints. */
-typedef int charclass[CHARCLASS_INTS];
+typedef int charclass[CHARCLASS_INTS], *charclass_ptr;
 
 /* Sometimes characters can only be matched depending on the surrounding
    context.  Such context decisions depend on what the previous character
@@ -265,11 +265,11 @@ typedef struct
 #endif
 } dfa_state;
 
-#if MBS_SUPPORT
 /* A bracket operator.
    e.g. [a-c], [[:alpha:]], etc.  */
 struct mb_char_classes
 {
+#if MBS_SUPPORT
   int cset;
   int invert;
   wchar_t *chars;		/* Normal characters.  */
@@ -288,8 +288,9 @@ struct mb_char_classes
   char **coll_elems;
   int ncoll_elems;		/* Collating elements.  */
   int acoll_elems;
-};
 #endif
+  charclass_ptr ccl;		/* Used only during construction.  */
+};
 
 /* A compiled regular expression. */
 struct dfa
@@ -710,27 +711,22 @@ in_coll_range (char ch, char from, char to)
 }
 
 struct mb_char_classes *
-mbcset_alloc(struct dfa *d)
+mbcset_alloc(struct dfa *d, charclass ccl)
 {
-#if MBS_SUPPORT
-  if (MB_CUR_MAX > 1)
-    {
-      struct mb_char_classes *work_mbc;
-      REALLOC_IF_NECESSARY(dfa->mbcsets, struct mb_char_classes,
-                           dfa->mbcsets_alloc, dfa->nmbcsets + 1);
+  struct mb_char_classes *work_mbc;
+  REALLOC_IF_NECESSARY(dfa->mbcsets, struct mb_char_classes,
+                       dfa->mbcsets_alloc, dfa->nmbcsets + 1);
 
-      /* dfa->multibyte_prop[] hold the index of dfa->mbcsets.
-         We will update dfa->multibyte_prop[] in addtok(), because we can't
-         decide the index in dfa->tokens[].  */
+  /* dfa->multibyte_prop[] hold the index of dfa->mbcsets.
+     We will update dfa->multibyte_prop[] in addtok(), because we can't
+     decide the index in dfa->tokens[].  */
 
-      /* Initialize work area.  */
-      work_mbc = &(dfa->mbcsets[dfa->nmbcsets++]);
-      memset (work_mbc, 0, sizeof *work_mbc);
-      return work_mbc;
-    }
-  else
-#endif
-    return NULL;
+  /* Initialize work area.  */
+  work_mbc = &(dfa->mbcsets[dfa->nmbcsets++]);
+  memset (work_mbc, 0, sizeof *work_mbc);
+  memset (ccl, 0, sizeof ccl);
+  work_mbc->ccl = ccl;
+  return work_mbc;
 }
 
 typedef int predicate (int);
@@ -772,7 +768,7 @@ find_pred (const char *str)
 }
 
 static void
-mbcset_add_class (struct mb_char_classes *work_mbc, charclass ccl,
+mbcset_add_class (struct mb_char_classes *work_mbc,
 		  const char *str)
 {
   unsigned c2;
@@ -800,12 +796,12 @@ mbcset_add_class (struct mb_char_classes *work_mbc, charclass ccl,
 
   for (c2 = 0; c2 < NOTCHAR; ++c2)
     if (pred->func(c2))
-      setbit_case_fold (c2, ccl);
+      setbit_case_fold (c2, work_mbc->ccl);
 }
 
 
 static void
-mbcset_add_range (struct mb_char_classes *work_mbc, charclass ccl,
+mbcset_add_range (struct mb_char_classes *work_mbc,
 #if MBS_SUPPORT
                   wint_t wc, wint_t wc2,
 #endif
@@ -853,12 +849,12 @@ mbcset_add_range (struct mb_char_classes *work_mbc, charclass ccl,
         }
       if (!hard_LC_COLLATE)
         for (c = c1; c <= c2; c++)
-          setbit_case_fold (c, ccl);
+          setbit_case_fold (c, work_mbc->ccl);
       else
         for (c = 0; c < NOTCHAR; ++c)
           if (!(case_fold && isupper (c))
               && in_coll_range (c, c1, c2))
-            setbit_case_fold (c, ccl);
+            setbit_case_fold (c, work_mbc->ccl);
     }
 }
 
@@ -882,12 +878,12 @@ mbcset_add_elem (struct mb_char_classes *work_mbc, char *elem)
 }
 
 static void
-mbcset_add_char (struct mb_char_classes *work_mbc, charclass ccl, wint_t wc)
+mbcset_add_char (struct mb_char_classes *work_mbc, wint_t wc)
 {
   unsigned c;
 
   /* Build normal characters.  */
-  setbit_case_fold (wc, ccl);
+  setbit_case_fold (wc, work_mbc->ccl);
   if (MB_CUR_MAX > 1)
     {
       if (case_fold && iswalpha(wc))
@@ -918,7 +914,7 @@ mbcset_add_char (struct mb_char_classes *work_mbc, charclass ccl, wint_t wc)
 #endif
 
 static token
-mbcset_finish (struct mb_char_classes *work_mbc, charclass ccl, bool invert)
+mbcset_finish (struct mb_char_classes *work_mbc, bool invert)
 {
 #if MBS_SUPPORT
   if (MB_CUR_MAX > 1
@@ -932,7 +928,10 @@ mbcset_finish (struct mb_char_classes *work_mbc, charclass ccl, bool invert)
     {
       static charclass zeroclass;
       work_mbc->invert = invert;
-      work_mbc->cset = equal(ccl, zeroclass) ? -1 : charclass_index(ccl);
+      work_mbc->cset = (equal(work_mbc->ccl, zeroclass)
+                        ? -1
+                        : charclass_index(work_mbc->ccl));
+      work_mbc->ccl = NULL;
       return MBCSET;
     }
 #endif
@@ -942,12 +941,12 @@ mbcset_finish (struct mb_char_classes *work_mbc, charclass ccl, bool invert)
 #if MBS_SUPPORT
       assert(MB_CUR_MAX == 1);
 #endif
-      notset(ccl);
+      notset(work_mbc->ccl);
       if (syntax_bits & RE_HAT_LISTS_NOT_NEWLINE)
-        clrbit(eolbyte, ccl);
+        clrbit(eolbyte, work_mbc->ccl);
     }
 
-  return CSET + charclass_index(ccl);
+  return CSET + charclass_index(work_mbc->ccl);
 }
 
 /* Multibyte character handling sub-routine for lex.
@@ -958,16 +957,12 @@ parse_bracket_exp (void)
 {
   int invert;
   int c, c1, c2;
-  charclass ccl;
-
 #if MBS_SUPPORT
   wint_t wc, wc1, wc2;
 #endif
+  charclass ccl;
+  struct mb_char_classes *work_mbc = mbcset_alloc(dfa, ccl);
 
-  /* Work area to build a mb_char_classes.  */
-  struct mb_char_classes *work_mbc = mbcset_alloc(dfa);
-
-  memset (ccl, 0, sizeof ccl);
   FETCH_WC (c, wc, _("unbalanced ["));
   if (c == '^')
     {
@@ -1016,7 +1011,7 @@ parse_bracket_exp (void)
               /* Fetch bracket.  */
               FETCH_WC (c, wc, _("unbalanced ["));
               if (c1 == ':')
-		mbcset_add_class (work_mbc, ccl, str);
+		mbcset_add_class (work_mbc, str);
 
 #if MBS_SUPPORT
               else if (c1 == '=' || c1 == '.')
@@ -1066,7 +1061,7 @@ parse_bracket_exp (void)
               && (syntax_bits & RE_BACKSLASH_ESCAPE_IN_LISTS))
             FETCH_WC(c2, wc2, _("unbalanced ["));
 
-	  mbcset_add_range (work_mbc, ccl,
+	  mbcset_add_range (work_mbc,
 #if MBS_SUPPORT
                             wc, wc2,
 #endif
@@ -1077,7 +1072,7 @@ parse_bracket_exp (void)
         }
 
 #if MBS_SUPPORT
-      mbcset_add_char (work_mbc, ccl, wc);
+      mbcset_add_char (work_mbc, wc);
 #else
       setbit_case_fold (c, ccl);
 #endif
@@ -1088,7 +1083,7 @@ parse_bracket_exp (void)
 #endif
          (c = c1) != ']'));
 
-  return mbcset_finish(work_mbc, ccl, invert);
+  return mbcset_finish(work_mbc, invert);
 }
 
 /* Return non-zero if C is a `word-constituent' byte; zero otherwise.  */
