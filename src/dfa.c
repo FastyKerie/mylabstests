@@ -865,7 +865,7 @@ mbcset_add_equiv (struct mb_char_classes *work_mbc, char *elem)
   REALLOC_IF_NECESSARY(work_mbc->equivs, char*,
 		       work_mbc->aequivs,
    		       work_mbc->nequivs + 1);
-  work_mbc->equivs[work_mbc->nequivs++] = elem;
+  work_mbc->equivs[work_mbc->nequivs++] = strdup (elem);
 }
 
 static void
@@ -874,7 +874,7 @@ mbcset_add_elem (struct mb_char_classes *work_mbc, char *elem)
   REALLOC_IF_NECESSARY(work_mbc->coll_elems, char*,
 		       work_mbc->acoll_elems,
    		       work_mbc->ncoll_elems + 1);
-  work_mbc->coll_elems[work_mbc->ncoll_elems++] = elem;
+  work_mbc->coll_elems[work_mbc->ncoll_elems++] = strdup (elem);
 }
 
 static void
@@ -1014,17 +1014,10 @@ parse_bracket_exp (void)
 		mbcset_add_class (work_mbc, str);
 
 #if MBS_SUPPORT
-              else if (c1 == '=' || c1 == '.')
-                {
-                  char *elem;
-                  MALLOC(elem, char, len + 1);
-                  strncpy(elem, str, len + 1);
-
-                  if (c1 == '=')
-		    mbcset_add_equiv (work_mbc, elem);
-		  else
-		    mbcset_add_elem (work_mbc, elem);
-                }
+              else if (c1 == '=')
+                mbcset_add_equiv (work_mbc, str);
+              else
+                mbcset_add_elem (work_mbc, str);
 #endif
 
               /* Fetch new lookahead character.  */
