@@ -709,6 +709,30 @@ in_coll_range (char ch, char from, char to)
   return strcoll (&c[0], &c[2]) <= 0 && strcoll (&c[2], &c[4]) <= 0;
 }
 
+struct mb_char_classes *
+mbcset_alloc(struct dfa *d)
+{
+#if MBS_SUPPORT
+  if (MB_CUR_MAX > 1)
+    {
+      struct mb_char_classes *work_mbc;
+      REALLOC_IF_NECESSARY(dfa->mbcsets, struct mb_char_classes,
+                           dfa->mbcsets_alloc, dfa->nmbcsets + 1);
+
+      /* dfa->multibyte_prop[] hold the index of dfa->mbcsets.
+         We will update dfa->multibyte_prop[] in addtok(), because we can't
+         decide the index in dfa->tokens[].  */
+
+      /* Initialize work area.  */
+      work_mbc = &(dfa->mbcsets[dfa->nmbcsets++]);
+      memset (work_mbc, 0, sizeof *work_mbc);
+      return work_mbc;
+    }
+  else
+#endif
+    return NULL;
+}
+
 typedef int predicate (int);
 
 /* The following list maps the names of the Posix named character classes
@@ -893,6 +917,38 @@ mbcset_add_char (struct mb_char_classes *work_mbc, charclass ccl, wint_t wc)
 }
 #endif
 
+static token
+mbcset_finish (struct mb_char_classes *work_mbc, charclass ccl, bool invert)
+{
+#if MBS_SUPPORT
+  if (MB_CUR_MAX > 1
+      && (!using_utf8()
+          || invert
+          || work_mbc->nchars != 0
+          || work_mbc->nch_classes != 0
+          || work_mbc->nranges != 0
+          || work_mbc->nequivs != 0
+          || work_mbc->ncoll_elems != 0))
+    {
+      static charclass zeroclass;
+      work_mbc->invert = invert;
+      work_mbc->cset = equal(ccl, zeroclass) ? -1 : charclass_index(ccl);
+      return MBCSET;
+    }
+#endif
+
+  if (invert)
+    {
+#if MBS_SUPPORT
+      assert(MB_CUR_MAX == 1);
+#endif
+      notset(ccl);
+      if (syntax_bits & RE_HAT_LISTS_NOT_NEWLINE)
+        clrbit(eolbyte, ccl);
+    }
+
+  return CSET + charclass_index(ccl);
+}
 
 /* Multibyte character handling sub-routine for lex.
    This function  parse a bracket expression and build a struct
@@ -906,26 +962,10 @@ parse_bracket_exp (void)
 
 #if MBS_SUPPORT
   wint_t wc, wc1, wc2;
+#endif
 
   /* Work area to build a mb_char_classes.  */
-  struct mb_char_classes *work_mbc;
-
-  if (MB_CUR_MAX > 1)
-    {
-      REALLOC_IF_NECESSARY(dfa->mbcsets, struct mb_char_classes,
-                           dfa->mbcsets_alloc, dfa->nmbcsets + 1);
-
-      /* dfa->multibyte_prop[] hold the index of dfa->mbcsets.
-         We will update dfa->multibyte_prop[] in addtok(), because we can't
-         decide the index in dfa->tokens[].  */
-
-      /* Initialize work area.  */
-      work_mbc = &(dfa->mbcsets[dfa->nmbcsets++]);
-      memset (work_mbc, 0, sizeof *work_mbc);
-    }
-  else
-    work_mbc = NULL;
-#endif
+  struct mb_char_classes *work_mbc = mbcset_alloc(dfa);
 
   memset (ccl, 0, sizeof ccl);
   FETCH_WC (c, wc, _("unbalanced ["));
@@ -1048,34 +1088,7 @@ parse_bracket_exp (void)
 #endif
          (c = c1) != ']'));
 
-#if MBS_SUPPORT
-  if (MB_CUR_MAX > 1
-      && (!using_utf8()
-          || invert
-          || work_mbc->nchars != 0
-          || work_mbc->nch_classes != 0
-          || work_mbc->nranges != 0
-          || work_mbc->nequivs != 0
-          || work_mbc->ncoll_elems != 0))
-    {
-      static charclass zeroclass;
-      work_mbc->invert = invert;
-      work_mbc->cset = equal(ccl, zeroclass) ? -1 : charclass_index(ccl);
-      return MBCSET;
-    }
-#endif
-
-  if (invert)
-    {
-#if MBS_SUPPORT
-      assert(MB_CUR_MAX == 1);
-#endif
-      notset(ccl);
-      if (syntax_bits & RE_HAT_LISTS_NOT_NEWLINE)
-        clrbit(eolbyte, ccl);
-    }
-
-  return CSET + charclass_index(ccl);
+  return mbcset_finish(work_mbc, ccl, invert);
 }
 
 /* Return non-zero if C is a `word-constituent' byte; zero otherwise.  */
