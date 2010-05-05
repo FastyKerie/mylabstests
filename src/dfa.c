@@ -2474,7 +2474,7 @@ dfastate (int s, struct dfa *d, int trans[])
       else
         state_letter = state;
       for (i = 0; i < NOTCHAR; ++i)
-        trans[i] = (IS_WORD_CONSTITUENT(i)) ? state_letter : state;
+        trans[i] = tstbit(i, letters) ? state_letter : state;
       trans[eolbyte] = state_newline;
     }
   else
@@ -2570,7 +2570,7 @@ dfastate (int s, struct dfa *d, int trans[])
 
               if (c == eolbyte)
                 trans[c] = state_newline;
-              else if (IS_WORD_CONSTITUENT(c))
+              else if (tstbit(c, letters))
                 trans[c] = state_letter;
               else if (c < NOTCHAR)
                 trans[c] = state;
