@@ -862,6 +862,9 @@ mbcset_add_range (struct mb_char_classes *work_mbc,
 static void
 mbcset_add_equiv (struct mb_char_classes *work_mbc, char *elem)
 {
+  if (!elem[1])
+    setbit_case_fold (elem[0], work_mbc->ccl);
+
   REALLOC_IF_NECESSARY(work_mbc->equivs, char*,
 		       work_mbc->aequivs,
    		       work_mbc->nequivs + 1);
@@ -871,6 +874,9 @@ mbcset_add_equiv (struct mb_char_classes *work_mbc, char *elem)
 static void
 mbcset_add_elem (struct mb_char_classes *work_mbc, char *elem)
 {
+  if (!elem[1])
+    setbit_case_fold (elem[0], work_mbc->ccl);
+
   REALLOC_IF_NECESSARY(work_mbc->coll_elems, char*,
 		       work_mbc->acoll_elems,
    		       work_mbc->ncoll_elems + 1);
