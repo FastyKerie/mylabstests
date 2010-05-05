@@ -858,17 +858,21 @@ mbcset_add_range (struct mb_char_classes *work_mbc,
     }
 }
 
-#if MBS_SUPPORT
 static void
 mbcset_add_equiv (struct mb_char_classes *work_mbc, char *elem)
 {
   if (!elem[1])
     setbit_case_fold (elem[0], work_mbc->ccl);
+#if !MBS_SUPPORT
+  else
+    dfaerror ("invalid collation element");
 
+#else
   REALLOC_IF_NECESSARY(work_mbc->equivs, char*,
 		       work_mbc->aequivs,
    		       work_mbc->nequivs + 1);
   work_mbc->equivs[work_mbc->nequivs++] = strdup (elem);
+#endif
 }
 
 static void
@@ -876,13 +880,19 @@ mbcset_add_elem (struct mb_char_classes *work_mbc, char *elem)
 {
   if (!elem[1])
     setbit_case_fold (elem[0], work_mbc->ccl);
+#if !MBS_SUPPORT
+  else
+    dfaerror ("invalid collation element");
 
+#else
   REALLOC_IF_NECESSARY(work_mbc->coll_elems, char*,
 		       work_mbc->acoll_elems,
    		       work_mbc->ncoll_elems + 1);
   work_mbc->coll_elems[work_mbc->ncoll_elems++] = strdup (elem);
+#endif
 }
 
+#if MBS_SUPPORT
 static void
 mbcset_add_char (struct mb_char_classes *work_mbc, wint_t wc)
 {
@@ -993,12 +1003,7 @@ parse_bracket_exp (void)
           FETCH_WC (c1, wc1, _("unbalanced ["));
 
           /* If pattern contains `[[:', `[[.', or `[[='.  */
-          if (c1 == ':'
-#if MBS_SUPPORT
-              /* TODO: handle `[[.' and `[[=' also for MB_CUR_MAX == 1.  */
-              || (MB_CUR_MAX > 1 && (c1 == '.' || c1 == '='))
-#endif
-              )
+          if (c1 == ':' || c1 == '.' || c1 == '=')
             {
               size_t len = 0;
               for (;;)
@@ -1018,13 +1023,10 @@ parse_bracket_exp (void)
               FETCH_WC (c, wc, _("unbalanced ["));
               if (c1 == ':')
 		mbcset_add_class (work_mbc, str);
-
-#if MBS_SUPPORT
               else if (c1 == '=')
                 mbcset_add_equiv (work_mbc, str);
               else
                 mbcset_add_elem (work_mbc, str);
-#endif
 
               /* Fetch new lookahead character.  */
               FETCH_WC (c1, wc1, _("unbalanced ["));
