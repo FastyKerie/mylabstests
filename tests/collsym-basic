@@ -1,0 +1,30 @@
+#!/bin/sh
+# This was not implemented for single-byte (!) locales up to grep 2.6.3 included
+: ${srcdir=.}
+. "$srcdir/init.sh"; path_prepend_ ../src
+
+printf '.=\n=.\naa\nab\nba\nbb\n' > in || framework_failure_
+printf 'aa\nab\nba\nbb\n' > exp1 || framework_failure_
+printf '.=\n=.\n' > exp2 || framework_failure_
+
+fail=0
+
+for LOC in C en_US.UTF-8 zh_CN $LOCALE_FR_UTF8; do
+  out=out1-elem-$LOC
+  LC_ALL=$LOC grep -E '[[.a.][.b.]]' < in > $out || fail=1
+  compare $out exp1 || fail=1
+
+  out=out1-equiv-$LOC
+  LC_ALL=$LOC grep -E '[[=a=][=b=]]' < in > $out || fail=1
+  compare $out exp1 || fail=1
+
+  out=out2-elem-$LOC
+  LC_ALL=$LOC grep -E '^[^[.a.][.b.]]' < in > $out || fail=1
+  compare $out exp2 || fail=1
+
+  out=out2-equiv-$LOC
+  LC_ALL=$LOC grep -E '^[^[=a=][=b=]]' < in > $out || fail=1
+  compare $out exp2 || fail=1
+done
+
+Exit $fail

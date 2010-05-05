@@ -37,6 +37,7 @@ TESTS =						\
   case-fold-char-range				\
   case-fold-char-type				\
   char-class-multibyte				\
+  collsym-basic					\
   dfaexec-multibyte				\
   empty						\
   ere.sh					\
